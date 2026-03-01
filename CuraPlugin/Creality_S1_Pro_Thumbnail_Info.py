@@ -18,12 +18,12 @@ except Exception:
         QIODevice = None
 
 
-class S1Pro_Thumbnail_300_Info(Script):
+class Creality_S1_Pro_Thumbnail_Info(Script):
 
     def getSettingDataString(self):
         return """{
             "name": "S1 Pro: 300x300 Thumbnail (Creality JPG block)",
-            "key": "S1Pro_Thumbnail_300_Info",
+            "key": "Creality_S1_Pro_Thumbnail_Info",
             "metadata": {},
             "version": 2,
             "settings":
@@ -68,6 +68,26 @@ class S1Pro_Thumbnail_300_Info(Script):
                     "default_value": 76,
                     "minimum_value": 40,
                     "maximum_value": 120
+                },
+
+                "enable_leveling":
+                {
+                    "label": "Enable bed leveling",
+                    "description": "Inject leveling commands into the Start G-code area.",
+                    "type": "bool",
+                    "default_value": false
+                },
+                "leveling_mode":
+                {
+                    "label": "Leveling mode",
+                    "description": "Use saved mesh (M420 S1) or probe now (G29).",
+                    "type": "enum",
+                    "options": {
+                        "use_saved_mesh": "Use saved mesh (M420 S1)",
+                        "probe_now": "Probe now (G29)"
+                    },
+                    "default_value": "use_saved_mesh",
+                    "enabled": "enable_leveling"
                 }
             }
         }"""
@@ -88,14 +108,21 @@ class S1Pro_Thumbnail_300_Info(Script):
             line_prefix = self.getSettingValueByKey("line_prefix") or "; "
             line_len = int(self.getSettingValueByKey("line_len"))
 
+            enable_leveling = bool(self.getSettingValueByKey("enable_leveling"))
+            leveling_mode = self.getSettingValueByKey("leveling_mode") or "use_saved_mesh"
+
             gcode = "\n".join(data)
 
-            # Avoid duplicates
+            # 1) Inject leveling into the start gcode (only if enabled)
+            if enable_leveling:
+                gcode = self._inject_leveling(gcode, leveling_mode)
+
+            # 2) Avoid duplicate thumbnail blocks
             if re.search(r"(?im)^\s*;\s*jpg\s+begin\s+\d+\*\d+\s+\d+", gcode):
                 Logger.log("i", "S1Pro thumbnail: jpg block already exists, skipping.")
-                return data
+                return [gcode]
 
-            # Render snapshot
+            # 3) Render snapshot
             img = None
             try:
                 img = Snapshot.snapshot(size, size)
@@ -104,13 +131,13 @@ class S1Pro_Thumbnail_300_Info(Script):
                     img = Snapshot().snapshot(size, size)
                 except Exception as ex:
                     Logger.log("w", f"S1Pro thumbnail: Snapshot failed: {ex}")
-                    return data
+                    return [gcode]
 
             if img is None:
                 Logger.log("w", "S1Pro thumbnail: Snapshot returned None.")
-                return data
+                return [gcode]
 
-            # QImage -> JPEG bytes
+            # 4) QImage -> JPEG bytes
             ba = QByteArray()
             buff = QBuffer(ba)
             buff.open(QIODevice.OpenModeFlag.WriteOnly)
@@ -119,7 +146,7 @@ class S1Pro_Thumbnail_300_Info(Script):
 
             if not ok or ba.size() <= 0:
                 Logger.log("w", "S1Pro thumbnail: Failed to encode JPG.")
-                return data
+                return [gcode]
 
             jpg_bytes = bytes(ba)
             byte_count = len(jpg_bytes)
@@ -133,7 +160,7 @@ class S1Pro_Thumbnail_300_Info(Script):
             footer = "; jpg end"
             block = "\n".join([header, b64_block, footer])
 
-            # Insert before ;FLAVOR if present (Creality style)
+            # 5) Insert before ;FLAVOR if present (Creality style)
             m = re.search(r"(?im)^\s*;FLAVOR:", gcode)
             if m:
                 insert_at = m.start()
@@ -146,3 +173,27 @@ class S1Pro_Thumbnail_300_Info(Script):
         except Exception as ex:
             Logger.logException("e", f"S1Pro thumbnail script failed: {ex}")
             return data
+
+    def _inject_leveling(self, gcode: str, leveling_mode: str) -> str:
+        # If user already has G29/M420 in start gcode, don't spam duplicates
+        if re.search(r"(?im)^\s*G29\b", gcode) or re.search(r"(?im)^\s*M420\s+S1\b", gcode):
+            Logger.log("i", "S1Pro leveling: leveling command already present, skipping inject.")
+            return gcode
+
+        # Insert right after the first G28 (home), which is the safest place.
+        # If no G28 exists, do nothing (we won't guess).
+        m = re.search(r"(?im)^\s*G28\b.*$", gcode)
+        if not m:
+            Logger.log("w", "S1Pro leveling: No G28 found. Not injecting leveling.")
+            return gcode
+
+        insert_pos = m.end()
+
+        if leveling_mode == "probe_now":
+            leveling_lines = "\nG29 ; Auto Bed Leveling (probe mesh now)\n"
+        else:
+            leveling_lines = "\nM420 S1 ; Enable saved mesh leveling\n"
+
+        gcode2 = gcode[:insert_pos] + leveling_lines + gcode[insert_pos:]
+        Logger.log("i", f"S1Pro leveling: injected mode={leveling_mode}")
+        return gcode2
