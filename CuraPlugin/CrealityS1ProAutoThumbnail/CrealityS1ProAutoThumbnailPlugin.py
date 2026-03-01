@@ -1,13 +1,17 @@
 import os
+import re
+import base64
+import textwrap
 from typing import Any
 
 from UM.Logger import Logger
+from UM.Application import Application
 
 # Qt compatibility: Cura 5.11 uses PyQt6, but keep fallback.
 try:
-    from PyQt6.QtCore import QObject, QMetaObject, Qt, pyqtProperty, pyqtSignal
+    from PyQt6.QtCore import QObject, QMetaObject, Qt, QByteArray, QBuffer, QIODevice, pyqtProperty, pyqtSignal
 except Exception:
-    from PyQt5.QtCore import QObject, QMetaObject, Qt, pyqtProperty, pyqtSignal
+    from PyQt5.QtCore import QObject, QMetaObject, Qt, QByteArray, QBuffer, QIODevice, pyqtProperty, pyqtSignal
 
 # Extension import compatibility
 try:
@@ -20,6 +24,11 @@ try:
 except Exception:
     CuraApplication = None
 
+try:
+    from cura.Snapshot import Snapshot
+except Exception:
+    Snapshot = None
+
 
 class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     """Cura Extension: shows Settings UI and stores settings in-memory.
@@ -27,6 +36,10 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     """
 
     preferencesChanged = pyqtSignal()
+    _pref_prefix = "creality_s1_pro_auto_thumbnail/"
+    _thumbnail_start_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_START"
+    _thumbnail_end_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_END"
+    _leveling_marker = "[CrealityS1ProAutoThumbnail]"
 
     def __init__(self, parent: Any = None) -> None:
         QObject.__init__(self, parent)
@@ -35,7 +48,6 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         self._application = CuraApplication.getInstance() if CuraApplication else None
         self._settings_dialog = None
 
-        # Default settings (in-memory)
         self._enabled = True
         self._size = 300
         self._jpeg_quality = 85
@@ -45,8 +57,175 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         self._leveling_enabled = False
         self._leveling_mode = "use_saved_mesh"
 
+        self._loadPreferences()
+
+        if self._application is not None:
+            self._application.getOutputDeviceManager().writeStarted.connect(self._onWriteStarted)
+
         self.addMenuItem("Settings", self.showSettings)
         Logger.log("i", "CrealityS1ProAutoThumbnail: loaded")
+
+    def _prefKey(self, name: str) -> str:
+        return self._pref_prefix + name
+
+    def _loadPreferences(self) -> None:
+        if self._application is None:
+            return
+
+        prefs = self._application.getPreferences()
+        prefs.addPreference(self._prefKey("enabled"), self._enabled)
+        prefs.addPreference(self._prefKey("size"), self._size)
+        prefs.addPreference(self._prefKey("jpeg_quality"), self._jpeg_quality)
+        prefs.addPreference(self._prefKey("line_length"), self._line_length)
+        prefs.addPreference(self._prefKey("line_prefix"), self._line_prefix)
+        prefs.addPreference(self._prefKey("creality_tail"), self._creality_tail)
+        prefs.addPreference(self._prefKey("leveling_enabled"), self._leveling_enabled)
+        prefs.addPreference(self._prefKey("leveling_mode"), self._leveling_mode)
+
+        self._enabled = self._asBool(prefs.getValue(self._prefKey("enabled")))
+        self._size = int(prefs.getValue(self._prefKey("size")))
+        self._jpeg_quality = int(prefs.getValue(self._prefKey("jpeg_quality")))
+        self._line_length = int(prefs.getValue(self._prefKey("line_length")))
+        self._line_prefix = str(prefs.getValue(self._prefKey("line_prefix")))
+        self._creality_tail = str(prefs.getValue(self._prefKey("creality_tail")))
+        self._leveling_enabled = self._asBool(prefs.getValue(self._prefKey("leveling_enabled")))
+        self._leveling_mode = str(prefs.getValue(self._prefKey("leveling_mode")) or "use_saved_mesh")
+
+    def _savePreference(self, name: str, value: Any) -> None:
+        if self._application is None:
+            return
+        self._application.getPreferences().setValue(self._prefKey(name), value)
+
+    def _asBool(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+
+    def _onWriteStarted(self, output_device: Any) -> None:
+        scene = Application.getInstance().getController().getScene()
+        if not hasattr(scene, "gcode_dict"):
+            Logger.log("w", "CrealityS1ProAutoThumbnail: Scene has no gcode_dict.")
+            return
+
+        gcode_dict = getattr(scene, "gcode_dict")
+        if not gcode_dict:
+            return
+
+        active_build_plate_id = self._application.getMultiBuildPlateModel().activeBuildPlate
+        gcode_list = gcode_dict.get(active_build_plate_id)
+        if not gcode_list:
+            return
+
+        try:
+            transformed_gcode = self._transformGcode("\n".join(gcode_list))
+        except Exception as ex:
+            Logger.logException("e", f"CrealityS1ProAutoThumbnail: Failed to transform gcode: {ex}")
+            return
+
+        gcode_dict[active_build_plate_id] = [transformed_gcode]
+        setattr(scene, "gcode_dict", gcode_dict)
+
+    def _transformGcode(self, gcode: str) -> str:
+        gcode = self._removeManagedThumbnailBlock(gcode)
+        gcode = self._removeManagedLeveling(gcode)
+
+        if not self._enabled:
+            return gcode
+
+        if self._leveling_enabled:
+            gcode = self._injectLeveling(gcode)
+
+        if re.search(r"(?im)^\s*;\s*jpg\s+begin\s+\d+\*\d+\s+\d+", gcode):
+            Logger.log("i", "CrealityS1ProAutoThumbnail: Existing JPG thumbnail block detected, not replacing it.")
+            return gcode
+
+        thumbnail_block = self._buildThumbnailBlock()
+        if not thumbnail_block:
+            return gcode
+
+        flavor_match = re.search(r"(?im)^\s*;FLAVOR:", gcode)
+        if flavor_match:
+            return gcode[:flavor_match.start()] + thumbnail_block + "\n" + gcode[flavor_match.start():]
+        return thumbnail_block + "\n" + gcode
+
+    def _removeManagedThumbnailBlock(self, gcode: str) -> str:
+        pattern = (
+            re.escape(self._thumbnail_start_marker)
+            + r".*?"
+            + re.escape(self._thumbnail_end_marker)
+            + r"\s*"
+        )
+        return re.sub(pattern, "", gcode, flags=re.DOTALL)
+
+    def _removeManagedLeveling(self, gcode: str) -> str:
+        pattern = rf"(?im)^\s*(?:G29|M420\s+S1)\b.*{re.escape(self._leveling_marker)}.*\n?"
+        return re.sub(pattern, "", gcode)
+
+    def _injectLeveling(self, gcode: str) -> str:
+        if re.search(r"(?im)^\s*G29\b", gcode) or re.search(r"(?im)^\s*M420\s+S1\b", gcode):
+            return gcode
+
+        match = re.search(r"(?im)^\s*G28\b.*$", gcode)
+        if not match:
+            Logger.log("w", "CrealityS1ProAutoThumbnail: No G28 found, skipping leveling injection.")
+            return gcode
+
+        if self._leveling_mode == "probe_now":
+            leveling_line = f"\nG29 ; Auto Bed Leveling (probe mesh now) {self._leveling_marker}\n"
+        else:
+            leveling_line = f"\nM420 S1 ; Enable saved mesh leveling {self._leveling_marker}\n"
+
+        return gcode[:match.end()] + leveling_line + gcode[match.end():]
+
+    def _buildThumbnailBlock(self) -> str:
+        if Snapshot is None:
+            Logger.log("w", "CrealityS1ProAutoThumbnail: Snapshot API not available.")
+            return ""
+
+        image = None
+        try:
+            image = Snapshot.snapshot(self._size, self._size)
+        except Exception:
+            try:
+                image = Snapshot().snapshot(self._size, self._size)
+            except Exception as ex:
+                Logger.logException("w", f"CrealityS1ProAutoThumbnail: Snapshot failed: {ex}")
+                return ""
+
+        if image is None:
+            Logger.log("w", "CrealityS1ProAutoThumbnail: Snapshot returned None.")
+            return ""
+
+        image_bytes = QByteArray()
+        buffer = QBuffer(image_bytes)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly if hasattr(QIODevice, "OpenModeFlag") else QIODevice.WriteOnly)
+        save_ok = image.save(buffer, "JPG", self._jpeg_quality)
+        buffer.close()
+
+        if not save_ok or image_bytes.size() <= 0:
+            Logger.log("w", "CrealityS1ProAutoThumbnail: Failed to encode JPG snapshot.")
+            return ""
+
+        raw_bytes = bytes(image_bytes)
+        byte_count = len(raw_bytes)
+        encoded = base64.b64encode(raw_bytes).decode("ascii")
+        encoded_lines = textwrap.wrap(encoded, self._line_length)
+        payload = "\n".join(f"{self._line_prefix}{line}" for line in encoded_lines)
+
+        header = f"; jpg begin {self._size}*{self._size} {byte_count}{self._creality_tail}".rstrip()
+        footer = "; jpg end"
+
+        return "\n".join(
+            [
+                self._thumbnail_start_marker,
+                header,
+                payload,
+                footer,
+                self._thumbnail_end_marker,
+            ]
+        )
 
     # ---------------- QML Loader ----------------
 
@@ -104,6 +283,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @enabled.setter
     def enabled(self, value: bool) -> None:
         self._enabled = bool(value)
+        self._savePreference("enabled", self._enabled)
         self.preferencesChanged.emit()
 
     @pyqtProperty(int, notify=preferencesChanged)
@@ -113,6 +293,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @size.setter
     def size(self, value: int) -> None:
         self._size = int(value)
+        self._savePreference("size", self._size)
         self.preferencesChanged.emit()
 
     @pyqtProperty(int, notify=preferencesChanged)
@@ -122,6 +303,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @jpegQuality.setter
     def jpegQuality(self, value: int) -> None:
         self._jpeg_quality = int(value)
+        self._savePreference("jpeg_quality", self._jpeg_quality)
         self.preferencesChanged.emit()
 
     @pyqtProperty(int, notify=preferencesChanged)
@@ -131,6 +313,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @lineLength.setter
     def lineLength(self, value: int) -> None:
         self._line_length = int(value)
+        self._savePreference("line_length", self._line_length)
         self.preferencesChanged.emit()
 
     @pyqtProperty(str, notify=preferencesChanged)
@@ -140,6 +323,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @linePrefix.setter
     def linePrefix(self, value: str) -> None:
         self._line_prefix = str(value)
+        self._savePreference("line_prefix", self._line_prefix)
         self.preferencesChanged.emit()
 
     @pyqtProperty(str, notify=preferencesChanged)
@@ -148,12 +332,13 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
 
     @pyqtProperty(str, notify=preferencesChanged)
     def version(self) -> str:
-        return "1.0.0"
+        return "1.1.0"
 
 
     @crealityTail.setter
     def crealityTail(self, value: str) -> None:
         self._creality_tail = str(value)
+        self._savePreference("creality_tail", self._creality_tail)
         self.preferencesChanged.emit()
 
     @pyqtProperty(bool, notify=preferencesChanged)
@@ -163,6 +348,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @levelingEnabled.setter
     def levelingEnabled(self, value: bool) -> None:
         self._leveling_enabled = bool(value)
+        self._savePreference("leveling_enabled", self._leveling_enabled)
         self.preferencesChanged.emit()
 
     @pyqtProperty(str, notify=preferencesChanged)
@@ -175,4 +361,5 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         if v not in ("use_saved_mesh", "probe_now"):
             v = "use_saved_mesh"
         self._leveling_mode = v
+        self._savePreference("leveling_mode", self._leveling_mode)
         self.preferencesChanged.emit()
