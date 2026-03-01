@@ -20,6 +20,7 @@ Use this checklist when preparing marketplace screenshots.
 - Use readable zoom so text in the settings window is legible
 - Do not crop away the Cura frame entirely; it should be obvious the plugin runs inside Cura
 - If showing the printer preview, use a sharp photo with minimal glare
+- Capture the plugin on the exact Cura version you plan to claim in the listing
 
 ## Suggested Screenshot Order For Listing
 

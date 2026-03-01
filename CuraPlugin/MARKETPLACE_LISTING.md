@@ -47,7 +47,8 @@ The plugin includes a settings window inside Cura where you can configure:
 
 ## Compatibility
 
-- Tested target: UltiMaker Cura 5.11
+- Tested target: UltiMaker Cura 5.11.x
+- SDK metadata: Cura SDK 8.x (`api: 8`, `supported_sdk_versions: 8.0.0`)
 - Intended use: Creality-compatible G-code workflows
 
 ## Tags
@@ -64,3 +65,5 @@ The plugin includes a settings window inside Cura where you can configure:
 If the printer does not update the preview, rename the exported G-code file and try again because some printer firmwares cache previews.
 
 If Cura fails to load the plugin, remove the plugin folder from the Cura plugins directory and restart Cura.
+
+For marketplace publication, replace this support text with your final support URL or repository URL.

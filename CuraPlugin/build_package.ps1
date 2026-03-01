@@ -27,11 +27,55 @@ if (-not (Test-Path $distDir)) {
 
 $zipName = "{0}-{1}.zip" -f $PluginName, $version
 $zipPath = Join-Path $distDir $zipName
+$stagingRoot = Join-Path $distDir "_staging"
+$stagingPluginDir = Join-Path $stagingRoot $PluginName
+
+Get-ChildItem -Path $distDir -File -Filter "$PluginName-*.zip" | Where-Object { $_.FullName -ne $zipPath } | ForEach-Object {
+    try {
+        Remove-Item $_.FullName -Force
+    } catch {
+        Write-Warning "Could not remove stale package: $($_.FullName)"
+    }
+}
+
+if (Test-Path $stagingRoot) {
+    try {
+        Remove-Item $stagingRoot -Recurse -Force
+    } catch {
+        Write-Warning "Could not clear previous staging folder: $stagingRoot"
+    }
+}
+
+New-Item -ItemType Directory -Path $stagingPluginDir -Force | Out-Null
+
+Copy-Item -Path (Join-Path $pluginDir "*") -Destination $stagingPluginDir -Recurse -Force -Exclude "__pycache__"
+
+Get-ChildItem -Path $stagingPluginDir -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+Get-ChildItem -Path $stagingPluginDir -Recurse -File -Include "*.pyc","*.pyo" | Remove-Item -Force
+
+$rootLicensePath = Join-Path $scriptDir "LICENSE"
+$rootReadmePath = Join-Path $scriptDir "README.md"
+
+if (Test-Path $rootLicensePath) {
+    Copy-Item -Path $rootLicensePath -Destination (Join-Path $stagingPluginDir "LICENSE") -Force
+}
+
+if (Test-Path $rootReadmePath) {
+    Copy-Item -Path $rootReadmePath -Destination (Join-Path $stagingPluginDir "README.md") -Force
+}
 
 if (Test-Path $zipPath) {
     Remove-Item $zipPath -Force
 }
 
-Compress-Archive -Path $pluginDir -DestinationPath $zipPath -CompressionLevel Optimal
+Compress-Archive -Path $stagingPluginDir -DestinationPath $zipPath -CompressionLevel Optimal
+
+Start-Sleep -Milliseconds 200
+
+try {
+    Remove-Item $stagingRoot -Recurse -Force
+} catch {
+    Write-Warning "Could not remove staging folder: $stagingRoot"
+}
 
 Write-Host "Created package: $zipPath"
