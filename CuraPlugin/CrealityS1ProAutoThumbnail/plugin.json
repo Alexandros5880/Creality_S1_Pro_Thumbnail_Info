@@ -1,0 +1,9 @@
+{
+  "name": "Creality S1 Pro Auto Thumbnail",
+  "author": "Alexp",
+  "version": "1.0.1",
+  "description": "Automatically injects Creality JPG thumbnail block (and optional leveling) on export.",
+  "api": 8,
+  "supported_sdk_versions": ["8.0.0"],
+  "i18n-catalog": "cura"
+}
