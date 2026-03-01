@@ -1,270 +1,431 @@
-import QtQuick 2.10
-import QtQuick.Controls 2.3
+import QtQuick 2.15
+import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.3
-import QtQuick.Window 2.2
 
-Window {
+import UM 1.6 as UM
+import Cura 1.6 as Cura
+
+UM.Dialog {
     id: root
-    title: "S1 Pro Auto Thumbnail"
-    visible: false
-    modality: Qt.ApplicationModal
-    width: 560
-    minimumWidth: 560
-    minimumHeight: 560
+
+    title: "Creality S1 Pro Auto Thumbnail"
+    width: 760 * screenScaleFactor
+    height: 620 * screenScaleFactor
+    minimumWidth: 620 * screenScaleFactor
+    minimumHeight: 520 * screenScaleFactor
+    backgroundColor: UM.Theme.getColor("main_background")
 
     property var backend
+    property int cardRadius: Math.round(UM.Theme.getSize("default_radius").width / 2)
+    property int sectionGap: UM.Theme.getSize("default_margin").height
 
     function safe(v, fallback) { return (v === undefined || v === null) ? fallback : v }
 
-    Rectangle {
-        anchors.fill: parent
-        color: palette.window
+    headerComponent: Rectangle {
+        width: parent.width
+        height: 118 * screenScaleFactor
+        color: UM.Theme.getColor("main_window_header_background")
+
+        Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 18 * screenScaleFactor
+            radius: 999
+            color: enableThumb.checked ? UM.Theme.getColor("action_button") : UM.Theme.getColor("setting_control_disabled_border")
+            width: statusLabel.implicitWidth + 18 * screenScaleFactor
+            height: 30 * screenScaleFactor
+
+            UM.Label {
+                id: statusLabel
+                anchors.centerIn: parent
+                text: enableThumb.checked ? "Enabled" : "Disabled"
+                color: UM.Theme.getColor(enableThumb.checked ? "text_default" : "button_text")
+                font: UM.Theme.getFont("default_bold")
+            }
+        }
 
         Column {
-            anchors.fill: parent
-            anchors.margins: 12
-            spacing: 12
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 22 * screenScaleFactor
+            anchors.rightMargin: 120 * screenScaleFactor
+            spacing: 6
 
-            Label {
-                width: parent.width
-                text: "Automatically injects a Creality-compatible JPG thumbnail into exported G-code."
-                wrapMode: Text.WordWrap
-                opacity: 0.85
+            UM.Label {
+                text: root.title
+                font: UM.Theme.getFont("large_bold")
+                color: UM.Theme.getColor("button_text")
             }
 
-            ScrollView {
+            UM.Label {
                 width: parent.width
-                height: parent.height - closeRow.height - 36
-                clip: true
+                text: "Injects a Creality-compatible JPG thumbnail into exported G-code and can optionally add bed leveling after the first G28."
+                wrapMode: Text.WordWrap
+                color: UM.Theme.getColor("button_text")
+                opacity: 0.88
+            }
+        }
+    }
 
-                Item {
-                    width: Math.max(root.width - 48, 400)
-                    implicitHeight: content.implicitHeight
+    Item {
+        anchors.fill: parent
+
+        Flickable {
+            id: scroll
+            anchors.fill: parent
+            anchors.margins: 18 * screenScaleFactor
+            anchors.bottomMargin: footerRow.height + 24 * screenScaleFactor
+            clip: true
+            contentWidth: width
+            contentHeight: content.implicitHeight
+            ScrollBar.vertical: UM.ScrollBar {
+                visible: scroll.contentHeight > scroll.height
+            }
+
+            Column {
+                id: content
+                width: scroll.width - (scroll.contentHeight > scroll.height ? 10 : 0)
+                spacing: root.sectionGap
+
+                Rectangle {
+                    width: parent.width
+                    radius: root.cardRadius
+                    color: UM.Theme.getColor("background_2")
+                    border.width: 1
+                    border.color: UM.Theme.getColor("lining")
+                    implicitHeight: enableSection.implicitHeight + 28 * screenScaleFactor
 
                     ColumnLayout {
-                        id: content
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        spacing: 14
+                        id: enableSection
+                        anchors.fill: parent
+                        anchors.margins: 14 * screenScaleFactor
+                        spacing: 10 * screenScaleFactor
 
-                        Rectangle {
+                        RowLayout {
                             Layout.fillWidth: true
-                            radius: 6
-                            border.width: 1
-                            border.color: "#3a3a3a"
-                            color: "transparent"
-                            implicitHeight: enableColumn.implicitHeight + 24
 
                             ColumnLayout {
-                                id: enableColumn
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 10
+                                Layout.fillWidth: true
+                                spacing: 4
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 10
-
-                                    CheckBox {
-                                        id: enableThumb
-                                        text: "Enable auto thumbnail injection"
-                                        checked: safe(backend ? backend.enabled : undefined, true)
-                                        onToggled: if (backend) backend.enabled = checked
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    Label {
-                                        text: "v" + safe(backend ? backend.version : undefined, "1.0.0")
-                                        opacity: 0.6
-                                    }
+                                UM.Label {
+                                    text: "Plugin status"
+                                    font: UM.Theme.getFont("default_bold")
                                 }
 
-                                Label {
+                                UM.Label {
                                     Layout.fillWidth: true
-                                    text: "When enabled, the plugin updates the G-code right before saving to disk (Local file / Removable drive)."
+                                    text: "Turn automatic thumbnail injection on or off for file exports."
                                     wrapMode: Text.WordWrap
-                                    opacity: 0.75
+                                    opacity: 0.7
                                 }
                             }
-                        }
 
-                        Rectangle {
-                            Layout.fillWidth: true
-                            radius: 6
-                            border.width: 1
-                            border.color: "#3a3a3a"
-                            color: "transparent"
-                            enabled: enableThumb.checked
-                            opacity: enabled ? 1.0 : 0.5
-                            implicitHeight: thumbColumn.implicitHeight + 24
-
-                            ColumnLayout {
-                                id: thumbColumn
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 10
-
-                                Label { text: "Thumbnail"; font.bold: true }
-
-                                GridLayout {
-                                    Layout.fillWidth: true
-                                    columns: 2
-                                    columnSpacing: 12
-                                    rowSpacing: 10
-
-                                    Label { text: "Size (px)"; opacity: 0.85 }
-                                    SpinBox {
-                                        from: 64; to: 512; stepSize: 1; editable: true
-                                        value: safe(backend ? backend.size : undefined, 300)
-                                        onValueModified: if (backend) backend.size = value
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Label { text: "JPEG quality"; opacity: 0.85 }
-                                    SpinBox {
-                                        from: 40; to: 95; stepSize: 1; editable: true
-                                        value: safe(backend ? backend.jpegQuality : undefined, 85)
-                                        onValueModified: if (backend) backend.jpegQuality = value
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Label { text: "Base64 line length"; opacity: 0.85 }
-                                    SpinBox {
-                                        from: 40; to: 120; stepSize: 1; editable: true
-                                        value: safe(backend ? backend.lineLength : undefined, 76)
-                                        onValueModified: if (backend) backend.lineLength = value
-                                        Layout.fillWidth: true
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            radius: 6
-                            border.width: 1
-                            border.color: "#3a3a3a"
-                            color: "transparent"
-                            enabled: enableThumb.checked
-                            opacity: enabled ? 1.0 : 0.5
-                            implicitHeight: advancedColumn.implicitHeight + 24
-
-                            ColumnLayout {
-                                id: advancedColumn
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 10
-
-                                Label { text: "Advanced"; font.bold: true }
-
-                                GridLayout {
-                                    Layout.fillWidth: true
-                                    columns: 2
-                                    columnSpacing: 12
-                                    rowSpacing: 10
-
-                                    Label { text: "Line prefix"; opacity: 0.85 }
-                                    TextField {
-                                        text: safe(backend ? backend.linePrefix : undefined, "; ")
-                                        placeholderText: "e.g. ; "
-                                        onEditingFinished: if (backend) backend.linePrefix = text
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Label { text: "Creality tail numbers"; opacity: 0.85 }
-                                    TextField {
-                                        text: safe(backend ? backend.crealityTail : undefined, " 1 197 500")
-                                        placeholderText: "e.g. 1 197 500"
-                                        onEditingFinished: if (backend) backend.crealityTail = text
-                                        Layout.fillWidth: true
-                                    }
-
-                                    Label {
-                                        Layout.columnSpan: 2
-                                        text: "Tip: Tail numbers are required by some Creality firmwares for thumbnail compatibility."
-                                        wrapMode: Text.WordWrap
-                                        opacity: 0.65
-                                    }
-                                }
-                            }
-                        }
-
-                        Rectangle {
-                            Layout.fillWidth: true
-                            radius: 6
-                            border.width: 1
-                            border.color: "#3a3a3a"
-                            color: "transparent"
-                            enabled: enableThumb.checked
-                            opacity: enabled ? 1.0 : 0.5
-                            implicitHeight: levelingColumn.implicitHeight + 24
-
-                            ColumnLayout {
-                                id: levelingColumn
-                                anchors.fill: parent
-                                anchors.margins: 12
-                                spacing: 10
-
-                                Label { text: "Bed leveling (optional)"; font.bold: true }
+                            RowLayout {
+                                spacing: 8 * screenScaleFactor
 
                                 CheckBox {
-                                    id: enableLeveling
-                                    text: "Inject leveling command after first G28"
-                                    checked: safe(backend ? backend.levelingEnabled : undefined, false)
-                                    onToggled: if (backend) backend.levelingEnabled = checked
+                                    id: enableThumb
+                                    text: ""
+                                    checked: safe(backend ? backend.enabled : undefined, true)
+                                    onToggled: if (backend) backend.enabled = checked
                                 }
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    enabled: enableLeveling.checked
-                                    opacity: enabled ? 1.0 : 0.5
-
-                                    Label { text: "Mode"; opacity: 0.85 }
-                                    ComboBox {
-                                        id: mode
-                                        Layout.fillWidth: true
-                                        textRole: "text"
-                                        model: [
-                                            { key: "use_saved_mesh", text: "Use saved mesh (M420 S1)" },
-                                            { key: "probe_now", text: "Probe now (G29)" }
-                                        ]
-
-                                        Component.onCompleted: {
-                                            var v = safe(backend ? backend.levelingMode : undefined, "use_saved_mesh")
-                                            for (var i = 0; i < model.length; i++) {
-                                                if (model[i].key === v) {
-                                                    currentIndex = i
-                                                    break
-                                                }
-                                            }
-                                        }
-
-                                        onActivated: if (backend && currentIndex >= 0) backend.levelingMode = model[currentIndex].key
-                                    }
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: "It will not add duplicates if your start G-code already contains G29 or M420 S1."
-                                    wrapMode: Text.WordWrap
-                                    opacity: 0.65
+                                UM.Label {
+                                    text: "Enabled"
+                                    font: UM.Theme.getFont("default_bold")
+                                    color: UM.Theme.getColor(enableThumb.enabled ? "text_default" : "text_disabled")
+                                    verticalAlignment: Text.AlignVCenter
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            Row {
-                id: closeRow
-                width: parent.width
-                layoutDirection: Qt.RightToLeft
+                Rectangle {
+                    width: parent.width
+                    radius: root.cardRadius
+                    color: UM.Theme.getColor("background_2")
+                    border.width: 1
+                    border.color: UM.Theme.getColor("lining")
+                    enabled: enableThumb.checked
+                    opacity: enabled ? 1.0 : 0.45
+                    implicitHeight: thumbSection.implicitHeight + 32 * screenScaleFactor
 
-                Button {
-                    text: "Close"
-                    onClicked: root.hide()
+                    ColumnLayout {
+                        id: thumbSection
+                        anchors.fill: parent
+                        anchors.margins: 16 * screenScaleFactor
+                        spacing: 12 * screenScaleFactor
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            UM.Label {
+                                text: "Thumbnail output"
+                                font: UM.Theme.getFont("default_bold")
+                            }
+
+                            UM.Label {
+                                Layout.fillWidth: true
+                                text: "Choose the rendered preview size, JPG compression and Base64 line wrapping."
+                                wrapMode: Text.WordWrap
+                                opacity: 0.7
+                            }
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 18 * screenScaleFactor
+                            rowSpacing: 12 * screenScaleFactor
+
+                            UM.Label {
+                                text: "Size (px)"
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            SpinBox {
+                                Layout.fillWidth: true
+                                from: 64
+                                to: 512
+                                stepSize: 1
+                                editable: true
+                                value: safe(backend ? backend.size : undefined, 300)
+                                onValueModified: if (backend) backend.size = value
+                            }
+
+                            UM.Label {
+                                text: "JPEG quality"
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            SpinBox {
+                                Layout.fillWidth: true
+                                from: 40
+                                to: 95
+                                stepSize: 1
+                                editable: true
+                                value: safe(backend ? backend.jpegQuality : undefined, 85)
+                                onValueModified: if (backend) backend.jpegQuality = value
+                            }
+
+                            UM.Label {
+                                text: "Base64 line length"
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            SpinBox {
+                                Layout.fillWidth: true
+                                from: 40
+                                to: 120
+                                stepSize: 1
+                                editable: true
+                                value: safe(backend ? backend.lineLength : undefined, 76)
+                                onValueModified: if (backend) backend.lineLength = value
+                            }
+                        }
+                    }
                 }
+
+                Rectangle {
+                    width: parent.width
+                    radius: root.cardRadius
+                    color: UM.Theme.getColor("background_2")
+                    border.width: 1
+                    border.color: UM.Theme.getColor("lining")
+                    enabled: enableThumb.checked
+                    opacity: enabled ? 1.0 : 0.45
+                    implicitHeight: advancedSection.implicitHeight + 32 * screenScaleFactor
+
+                    ColumnLayout {
+                        id: advancedSection
+                        anchors.fill: parent
+                        anchors.margins: 16 * screenScaleFactor
+                        spacing: 12 * screenScaleFactor
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            UM.Label {
+                                text: "Firmware formatting"
+                                font: UM.Theme.getFont("default_bold")
+                            }
+
+                            UM.Label {
+                                Layout.fillWidth: true
+                                text: "Control the exact formatting used for the encoded thumbnail block."
+                                wrapMode: Text.WordWrap
+                                opacity: 0.7
+                            }
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 18 * screenScaleFactor
+                            rowSpacing: 12 * screenScaleFactor
+
+                            UM.Label {
+                                text: "Line prefix"
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Cura.TextField {
+                                Layout.fillWidth: true
+                                text: safe(backend ? backend.linePrefix : undefined, "; ")
+                                placeholderText: "e.g. ; "
+                                selectByMouse: true
+                                onEditingFinished: if (backend) backend.linePrefix = text
+                            }
+
+                            UM.Label {
+                                text: "Creality tail numbers"
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Cura.TextField {
+                                Layout.fillWidth: true
+                                text: safe(backend ? backend.crealityTail : undefined, " 1 197 500")
+                                placeholderText: "e.g. 1 197 500"
+                                selectByMouse: true
+                                onEditingFinished: if (backend) backend.crealityTail = text
+                            }
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            radius: root.cardRadius
+                            color: UM.Theme.getColor("main_background")
+                            border.width: 1
+                            border.color: UM.Theme.getColor("lining")
+                            implicitHeight: tipText.implicitHeight + 20 * screenScaleFactor
+
+                            UM.Label {
+                                id: tipText
+                                anchors.fill: parent
+                                anchors.margins: 10 * screenScaleFactor
+                                text: "Tip: some Creality firmwares reject thumbnails unless the expected tail numbers are present."
+                                wrapMode: Text.WordWrap
+                                opacity: 0.72
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    radius: root.cardRadius
+                    color: UM.Theme.getColor("background_2")
+                    border.width: 1
+                    border.color: UM.Theme.getColor("lining")
+                    enabled: enableThumb.checked
+                    opacity: enabled ? 1.0 : 0.45
+                    implicitHeight: levelingSection.implicitHeight + 32 * screenScaleFactor
+
+                    ColumnLayout {
+                        id: levelingSection
+                        anchors.fill: parent
+                        anchors.margins: 16 * screenScaleFactor
+                        spacing: 12 * screenScaleFactor
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            UM.Label {
+                                text: "Bed leveling"
+                                font: UM.Theme.getFont("default_bold")
+                            }
+
+                            UM.Label {
+                                Layout.fillWidth: true
+                                text: "Optionally insert one leveling command after the first homing move."
+                                wrapMode: Text.WordWrap
+                                opacity: 0.7
+                            }
+                        }
+
+                        RowLayout {
+                            spacing: 8 * screenScaleFactor
+
+                            CheckBox {
+                                id: enableLeveling
+                                text: ""
+                                checked: safe(backend ? backend.levelingEnabled : undefined, false)
+                                onToggled: if (backend) backend.levelingEnabled = checked
+                            }
+
+                            UM.Label {
+                                text: "Inject leveling after first G28"
+                                font: UM.Theme.getFont("default_bold")
+                                color: UM.Theme.getColor(enableLeveling.enabled ? "text_default" : "text_disabled")
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+
+                        GridLayout {
+                            Layout.fillWidth: true
+                            columns: 2
+                            columnSpacing: 18 * screenScaleFactor
+                            rowSpacing: 12 * screenScaleFactor
+                            enabled: enableLeveling.checked
+                            opacity: enabled ? 1.0 : 0.45
+
+                            UM.Label {
+                                text: "Leveling mode"
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Cura.ComboBox {
+                                id: mode
+                                Layout.fillWidth: true
+                                textRole: "text"
+                                model: [
+                                    { key: "use_saved_mesh", text: "Use saved mesh (M420 S1)" },
+                                    { key: "probe_now", text: "Probe now (G29)" }
+                                ]
+
+                                Component.onCompleted: {
+                                    var v = safe(backend ? backend.levelingMode : undefined, "use_saved_mesh")
+                                    for (var i = 0; i < model.length; i++) {
+                                        if (model[i].key === v) {
+                                            currentIndex = i
+                                            break
+                                        }
+                                    }
+                                }
+
+                                onActivated: if (backend && currentIndex >= 0) backend.levelingMode = model[currentIndex].key
+                            }
+                        }
+
+                        UM.Label {
+                            Layout.fillWidth: true
+                            text: "The plugin skips duplicate insertion if your start G-code already includes G29 or M420 S1."
+                            wrapMode: Text.WordWrap
+                            opacity: 0.7
+                        }
+                    }
+                }
+            }
+        }
+
+        Row {
+            id: footerRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: 18 * screenScaleFactor
+            layoutDirection: Qt.RightToLeft
+            spacing: 10 * screenScaleFactor
+
+            Cura.PrimaryButton {
+                text: "Close"
+                onClicked: root.hide()
             }
         }
     }
