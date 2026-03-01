@@ -1,0 +1,13 @@
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+
+# Examples / temp
+*.gcode
+examples/
