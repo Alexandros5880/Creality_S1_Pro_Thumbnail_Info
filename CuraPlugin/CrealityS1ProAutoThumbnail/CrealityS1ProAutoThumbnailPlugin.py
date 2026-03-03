@@ -145,6 +145,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     def _transformGcode(self, gcode: str) -> str:
         gcode = self._removeManagedThumbnailBlock(gcode)
         gcode = self._removeManagedLeveling(gcode)
+        gcode = self._blankTargetMachineNameLine(gcode)
 
         if not self._enabled:
             return gcode
@@ -166,16 +167,23 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         return thumbnail_block + "\n" + gcode
 
     def _removeManagedThumbnailBlock(self, gcode: str) -> str:
-        pattern = (
+        legacy_pattern = (
             re.escape(self._thumbnail_start_marker)
             + r".*?"
-            + re.escape(self._thumbnail_end_marker)
-            + r"\s*"
+            + r";\s*jpg\s+end"
+            + r"(?:\n[ \t]*)?"
         )
-        return re.sub(pattern, "", gcode, flags=re.DOTALL)
+        gcode = re.sub(legacy_pattern, "", gcode, flags=re.DOTALL)
+
+        unmarked_pattern = r"(?is)\A\s*;\s*jpg\s+begin\s+\d+\*\d+\s+\d+[^\n]*\n.*?\n;\s*jpg\s+end(?:\n[ \t]*)?"
+        return re.sub(unmarked_pattern, "", gcode, count=1)
 
     def _removeManagedLeveling(self, gcode: str) -> str:
         pattern = rf"(?im)^\s*(?:G29|M420\s+S1)\b.*{re.escape(self._leveling_marker)}.*\n?"
+        return re.sub(pattern, "", gcode)
+
+    def _blankTargetMachineNameLine(self, gcode: str) -> str:
+        pattern = r"(?im)^;TARGET_MACHINE\.NAME:Creality Ender-3 S1 Pro\s*$"
         return re.sub(pattern, "", gcode)
 
     def _injectLeveling(self, gcode: str) -> str:
@@ -234,11 +242,10 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
 
         return "\n".join(
             [
-                self._thumbnail_start_marker,
                 header,
                 payload,
                 footer,
-                self._thumbnail_end_marker,
+                "",
             ]
         )
 
