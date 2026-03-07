@@ -145,6 +145,7 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     def _transformGcode(self, gcode: str) -> str:
         gcode = self._removeManagedThumbnailBlock(gcode)
         gcode = self._removeManagedLeveling(gcode)
+        gcode = self._blankTargetMachineNameLine(gcode)
 
         if not self._enabled:
             return gcode
@@ -166,26 +167,41 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         return thumbnail_block + "\n" + gcode
 
     def _removeManagedThumbnailBlock(self, gcode: str) -> str:
-        pattern = (
+        legacy_pattern = (
             re.escape(self._thumbnail_start_marker)
             + r".*?"
-            + re.escape(self._thumbnail_end_marker)
-            + r"\s*"
+            + r";\s*jpg\s+end"
+            + r"(?:\n[ \t]*)?"
         )
-        return re.sub(pattern, "", gcode, flags=re.DOTALL)
+        gcode = re.sub(legacy_pattern, "", gcode, flags=re.DOTALL)
+
+        unmarked_pattern = r"(?is)\A\s*;\s*jpg\s+begin\s+\d+\*\d+\s+\d+[^\n]*\n.*?\n;\s*jpg\s+end(?:\n[ \t]*)?"
+        return re.sub(unmarked_pattern, "", gcode, count=1)
 
     def _removeManagedLeveling(self, gcode: str) -> str:
         pattern = rf"(?im)^\s*(?:G29|M420\s+S1)\b.*{re.escape(self._leveling_marker)}.*\n?"
         return re.sub(pattern, "", gcode)
 
+    def _blankTargetMachineNameLine(self, gcode: str) -> str:
+        pattern = r"(?im)^;TARGET_MACHINE\.NAME:Creality Ender-3 S1 Pro\s*$"
+        return re.sub(pattern, "", gcode)
+
     def _injectLeveling(self, gcode: str) -> str:
-        if re.search(r"(?im)^\s*G29\b", gcode) or re.search(r"(?im)^\s*M420\s+S1\b", gcode):
+        # Restrict duplicate detection and insertion point to start G-code only.
+        # Some profiles/macros can contain G29/M420 later in the file, which should
+        # not prevent start-leveling injection.
+        layer0_markers = list(re.finditer(r"(?im)^\s*;\s*LAYER:0\b.*$", gcode))
+        start_end = layer0_markers[0].start() if layer0_markers else len(gcode)
+        start_gcode = gcode[:start_end]
+
+        if re.search(r"(?im)^\s*G29\b", start_gcode) or re.search(r"(?im)^\s*M420\s+S1\b", start_gcode):
             return gcode
 
-        match = re.search(r"(?im)^\s*G28\b.*$", gcode)
-        if not match:
+        g28_matches = list(re.finditer(r"(?im)^\s*G28\b.*$", start_gcode))
+        if not g28_matches:
             Logger.log("w", "CrealityS1ProAutoThumbnail: No G28 found, skipping leveling injection.")
             return gcode
+        match = g28_matches[-1]
 
         if self._leveling_mode == "probe_now":
             leveling_line = f"\nG29 ; Auto Bed Leveling (probe mesh now) {self._leveling_marker}\n"
@@ -234,11 +250,10 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
 
         return "\n".join(
             [
-                self._thumbnail_start_marker,
                 header,
                 payload,
                 footer,
-                self._thumbnail_end_marker,
+                "",
             ]
         )
 
