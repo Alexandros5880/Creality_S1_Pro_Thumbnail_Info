@@ -10,9 +10,9 @@ from UM.Application import Application
 
 # Qt compatibility: Cura 5.11 uses PyQt6, but keep fallback.
 try:
-    from PyQt6.QtCore import QObject, QMetaObject, Qt, QByteArray, QBuffer, QIODevice, pyqtProperty, pyqtSignal
+    from PyQt6.QtCore import QObject, QMetaObject, Qt, QByteArray, QBuffer, QIODevice, pyqtProperty, pyqtSignal, pyqtSlot
 except Exception:
-    from PyQt5.QtCore import QObject, QMetaObject, Qt, QByteArray, QBuffer, QIODevice, pyqtProperty, pyqtSignal
+    from PyQt5.QtCore import QObject, QMetaObject, Qt, QByteArray, QBuffer, QIODevice, pyqtProperty, pyqtSignal, pyqtSlot
 
 # Extension import compatibility
 try:
@@ -42,6 +42,14 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     _thumbnail_start_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_START"
     _thumbnail_end_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_END"
     _leveling_marker = "[CrealityS1ProAutoThumbnail]"
+    _default_enabled = True
+    _default_size = 300
+    _default_jpeg_quality = 85
+    _default_line_length = 76
+    _default_line_prefix = "; "
+    _default_creality_tail = " 1 197 500"
+    _default_leveling_enabled = False
+    _default_leveling_mode = "use_saved_mesh"
 
     def __init__(self, parent: Any = None) -> None:
         QObject.__init__(self, parent)
@@ -50,14 +58,14 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         self._application = CuraApplication.getInstance() if CuraApplication else None
         self._settings_dialog = None
 
-        self._enabled = True
-        self._size = 300
-        self._jpeg_quality = 85
-        self._line_length = 76
-        self._line_prefix = "; "
-        self._creality_tail = " 1 197 500"
-        self._leveling_enabled = False
-        self._leveling_mode = "use_saved_mesh"
+        self._enabled = self._default_enabled
+        self._size = self._default_size
+        self._jpeg_quality = self._default_jpeg_quality
+        self._line_length = self._default_line_length
+        self._line_prefix = self._default_line_prefix
+        self._creality_tail = self._default_creality_tail
+        self._leveling_enabled = self._default_leveling_enabled
+        self._leveling_mode = self._default_leveling_mode
         self._plugin_version = self._loadPluginVersion()
 
         self._loadPreferences()
@@ -88,14 +96,14 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
             return
 
         prefs = self._application.getPreferences()
-        prefs.addPreference(self._prefKey("enabled"), self._enabled)
-        prefs.addPreference(self._prefKey("size"), self._size)
-        prefs.addPreference(self._prefKey("jpeg_quality"), self._jpeg_quality)
-        prefs.addPreference(self._prefKey("line_length"), self._line_length)
-        prefs.addPreference(self._prefKey("line_prefix"), self._line_prefix)
-        prefs.addPreference(self._prefKey("creality_tail"), self._creality_tail)
-        prefs.addPreference(self._prefKey("leveling_enabled"), self._leveling_enabled)
-        prefs.addPreference(self._prefKey("leveling_mode"), self._leveling_mode)
+        prefs.addPreference(self._prefKey("enabled"), self._default_enabled)
+        prefs.addPreference(self._prefKey("size"), self._default_size)
+        prefs.addPreference(self._prefKey("jpeg_quality"), self._default_jpeg_quality)
+        prefs.addPreference(self._prefKey("line_length"), self._default_line_length)
+        prefs.addPreference(self._prefKey("line_prefix"), self._default_line_prefix)
+        prefs.addPreference(self._prefKey("creality_tail"), self._default_creality_tail)
+        prefs.addPreference(self._prefKey("leveling_enabled"), self._default_leveling_enabled)
+        prefs.addPreference(self._prefKey("leveling_mode"), self._default_leveling_mode)
 
         self._enabled = self._asBool(prefs.getValue(self._prefKey("enabled")))
         self._size = int(prefs.getValue(self._prefKey("size")))
@@ -105,6 +113,18 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         self._creality_tail = str(prefs.getValue(self._prefKey("creality_tail")))
         self._leveling_enabled = self._asBool(prefs.getValue(self._prefKey("leveling_enabled")))
         self._leveling_mode = str(prefs.getValue(self._prefKey("leveling_mode")) or "use_saved_mesh")
+        if self._leveling_mode not in ("use_saved_mesh", "probe_now"):
+            self._leveling_mode = self._default_leveling_mode
+
+    def _saveAllPreferences(self) -> None:
+        self._savePreference("enabled", self._enabled)
+        self._savePreference("size", self._size)
+        self._savePreference("jpeg_quality", self._jpeg_quality)
+        self._savePreference("line_length", self._line_length)
+        self._savePreference("line_prefix", self._line_prefix)
+        self._savePreference("creality_tail", self._creality_tail)
+        self._savePreference("leveling_enabled", self._leveling_enabled)
+        self._savePreference("leveling_mode", self._leveling_mode)
 
     def _savePreference(self, name: str, value: Any) -> None:
         if self._application is None:
@@ -363,6 +383,26 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     @pyqtProperty(str, notify=preferencesChanged)
     def version(self) -> str:
         return self._plugin_version
+
+    @pyqtSlot()
+    def saveNow(self) -> None:
+        self._saveAllPreferences()
+        self.preferencesChanged.emit()
+        Logger.log("i", "CrealityS1ProAutoThumbnail: preferences saved.")
+
+    @pyqtSlot()
+    def resetToDefaults(self) -> None:
+        self._enabled = self._default_enabled
+        self._size = self._default_size
+        self._jpeg_quality = self._default_jpeg_quality
+        self._line_length = self._default_line_length
+        self._line_prefix = self._default_line_prefix
+        self._creality_tail = self._default_creality_tail
+        self._leveling_enabled = self._default_leveling_enabled
+        self._leveling_mode = self._default_leveling_mode
+        self._saveAllPreferences()
+        self.preferencesChanged.emit()
+        Logger.log("i", "CrealityS1ProAutoThumbnail: preferences reset to defaults.")
 
 
     @crealityTail.setter

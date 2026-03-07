@@ -20,6 +20,41 @@ UM.Dialog {
     property int sectionGap: UM.Theme.getSize("default_margin").height
 
     function safe(v, fallback) { return (v === undefined || v === null) ? fallback : v }
+    function indexForLevelingMode(modeKey) {
+        var mode = safe(modeKey, "use_saved_mesh")
+        for (var i = 0; i < modeModel.length; i++) {
+            if (modeModel[i].key === mode) {
+                return i
+            }
+        }
+        return 0
+    }
+    function syncLevelingModeFromBackend() {
+        if (!backend || !mode) {
+            return
+        }
+        var idx = indexForLevelingMode(backend.levelingMode)
+        if (mode.currentIndex !== idx) {
+            mode.currentIndex = idx
+        }
+    }
+    function syncAllFromBackend() {
+        if (!backend) {
+            return
+        }
+        if (enableThumb.checked !== backend.enabled) enableThumb.checked = backend.enabled
+        if (sizeSpin.value !== backend.size) sizeSpin.value = backend.size
+        if (qualitySpin.value !== backend.jpegQuality) qualitySpin.value = backend.jpegQuality
+        if (lineLengthSpin.value !== backend.lineLength) lineLengthSpin.value = backend.lineLength
+        if (linePrefixField.text !== backend.linePrefix) linePrefixField.text = backend.linePrefix
+        if (crealityTailField.text !== backend.crealityTail) crealityTailField.text = backend.crealityTail
+        if (enableLeveling.checked !== backend.levelingEnabled) enableLeveling.checked = backend.levelingEnabled
+        syncLevelingModeFromBackend()
+    }
+    property var modeModel: [
+        { key: "use_saved_mesh", text: "Use saved mesh (M420 S1)" },
+        { key: "probe_now", text: "Probe now (G29)" }
+    ]
 
     headerComponent: Rectangle {
         width: parent.width
@@ -188,13 +223,14 @@ UM.Dialog {
                             }
 
                             SpinBox {
+                                id: sizeSpin
                                 Layout.fillWidth: true
                                 from: 64
                                 to: 512
                                 stepSize: 1
                                 editable: true
                                 value: safe(backend ? backend.size : undefined, 300)
-                                onValueModified: if (backend) backend.size = value
+                                onValueChanged: if (backend && backend.size !== value) backend.size = value
                             }
 
                             UM.Label {
@@ -203,13 +239,14 @@ UM.Dialog {
                             }
 
                             SpinBox {
+                                id: qualitySpin
                                 Layout.fillWidth: true
                                 from: 40
                                 to: 95
                                 stepSize: 1
                                 editable: true
                                 value: safe(backend ? backend.jpegQuality : undefined, 85)
-                                onValueModified: if (backend) backend.jpegQuality = value
+                                onValueChanged: if (backend && backend.jpegQuality !== value) backend.jpegQuality = value
                             }
 
                             UM.Label {
@@ -218,13 +255,14 @@ UM.Dialog {
                             }
 
                             SpinBox {
+                                id: lineLengthSpin
                                 Layout.fillWidth: true
                                 from: 40
                                 to: 120
                                 stepSize: 1
                                 editable: true
                                 value: safe(backend ? backend.lineLength : undefined, 76)
-                                onValueModified: if (backend) backend.lineLength = value
+                                onValueChanged: if (backend && backend.lineLength !== value) backend.lineLength = value
                             }
                         }
                     }
@@ -275,11 +313,12 @@ UM.Dialog {
                             }
 
                             Cura.TextField {
+                                id: linePrefixField
                                 Layout.fillWidth: true
                                 text: safe(backend ? backend.linePrefix : undefined, "; ")
                                 placeholderText: "e.g. ; "
                                 selectByMouse: true
-                                onEditingFinished: if (backend) backend.linePrefix = text
+                                onTextChanged: if (backend && backend.linePrefix !== text) backend.linePrefix = text
                             }
 
                             UM.Label {
@@ -288,11 +327,12 @@ UM.Dialog {
                             }
 
                             Cura.TextField {
+                                id: crealityTailField
                                 Layout.fillWidth: true
                                 text: safe(backend ? backend.crealityTail : undefined, " 1 197 500")
                                 placeholderText: "e.g. 1 197 500"
                                 selectByMouse: true
-                                onEditingFinished: if (backend) backend.crealityTail = text
+                                onTextChanged: if (backend && backend.crealityTail !== text) backend.crealityTail = text
                             }
                         }
 
@@ -384,22 +424,12 @@ UM.Dialog {
                                 id: mode
                                 Layout.fillWidth: true
                                 textRole: "text"
-                                model: [
-                                    { key: "use_saved_mesh", text: "Use saved mesh (M420 S1)" },
-                                    { key: "probe_now", text: "Probe now (G29)" }
-                                ]
-
-                                Component.onCompleted: {
-                                    var v = safe(backend ? backend.levelingMode : undefined, "use_saved_mesh")
-                                    for (var i = 0; i < model.length; i++) {
-                                        if (model[i].key === v) {
-                                            currentIndex = i
-                                            break
-                                        }
+                                model: modeModel
+                                onCurrentIndexChanged: {
+                                    if (backend && currentIndex >= 0 && model[currentIndex].key !== backend.levelingMode) {
+                                        backend.levelingMode = model[currentIndex].key
                                     }
                                 }
-
-                                onActivated: if (backend && currentIndex >= 0) backend.levelingMode = model[currentIndex].key
                             }
                         }
 
@@ -424,9 +454,30 @@ UM.Dialog {
             spacing: 10 * screenScaleFactor
 
             Cura.PrimaryButton {
+                text: "Reset defaults"
+                onClicked: if (backend) backend.resetToDefaults()
+            }
+
+            Cura.PrimaryButton {
+                text: "Save now"
+                onClicked: if (backend) backend.saveNow()
+            }
+
+            Cura.PrimaryButton {
                 text: "Close"
                 onClicked: root.hide()
             }
         }
+
+        Connections {
+            target: backend
+            ignoreUnknownSignals: true
+            function onPreferencesChanged() {
+                syncAllFromBackend()
+            }
+        }
     }
+
+    onBackendChanged: syncAllFromBackend()
+    onVisibleChanged: if (visible) syncAllFromBackend()
 }
