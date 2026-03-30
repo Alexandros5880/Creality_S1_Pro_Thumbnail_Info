@@ -39,19 +39,15 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
     preferencesChanged = pyqtSignal()
     _plugin_version = "1.1.0"
     _pref_prefix = "creality_s1_pro_auto_thumbnail/"
-    _thumbnail_start_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_START"
-    _thumbnail_end_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_END"
     _leveling_marker = "[CrealityS1ProAutoThumbnail]"
     _default_enabled = True
     _default_size = 64
     _default_jpeg_quality = 60
     _default_line_length = 76
     _default_line_prefix = "; "
-    _default_creality_tail = " 1 197 500"
+    _default_creality_tail = " 1 298 213"
     _default_leveling_enabled = False
     _default_leveling_mode = "use_saved_mesh"
-    _thumbnail_start_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_START"
-    _thumbnail_end_marker = ";CREALITY_S1_PRO_AUTO_THUMBNAIL_BLOCK_END"
 
     def __init__(self, parent: Any = None) -> None:
         QObject.__init__(self, parent)
@@ -165,7 +161,6 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         setattr(scene, "gcode_dict", gcode_dict)
 
     def _transformGcode(self, gcode: str) -> str:
-        gcode = self._removeManagedThumbnailBlock(gcode)
         gcode = self._removeManagedLeveling(gcode)
 
         if not self._enabled:
@@ -186,18 +181,6 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         if flavor_match:
             return gcode[:flavor_match.start()] + thumbnail_block + "\n" + gcode[flavor_match.start():]
         return thumbnail_block + "\n" + gcode
-
-    def _removeManagedThumbnailBlock(self, gcode: str) -> str:
-        legacy_pattern = (
-            re.escape(self._thumbnail_start_marker)
-            + r".*?"
-            + r";\s*jpg\s+end"
-            + r"(?:\n[ \t]*)?"
-        )
-        gcode = re.sub(legacy_pattern, "", gcode, flags=re.DOTALL)
-
-        unmarked_pattern = r"(?is)\A\s*;\s*jpg\s+begin\s+\d+\*\d+\s+\d+[^\n]*\n.*?\n;\s*jpg\s+end(?:\n[ \t]*)?"
-        return re.sub(unmarked_pattern, "", gcode, count=1)
 
     def _removeManagedLeveling(self, gcode: str) -> str:
         pattern = rf"(?im)^\s*(?:G29|M420\s+S1)\b.*{re.escape(self._leveling_marker)}.*\n?"
@@ -231,9 +214,9 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
         if Snapshot is None:
             Logger.log("w", "CrealityS1ProAutoThumbnail: Snapshot API not available.")
             return ""
-        if byte_count > 20000:
-            Logger.log("w", f"CrealityS1ProAutoThumbnail: Thumbnail too large ({byte_count} bytes), skipping.")
-            return ""
+        # if byte_count > 20000:
+        #     Logger.log("w", f"CrealityS1ProAutoThumbnail: Thumbnail too large ({byte_count} bytes), skipping.")
+        #     return ""
 
         image = None
         try:
@@ -270,11 +253,9 @@ class CrealityS1ProAutoThumbnailPlugin(QObject, Extension):
 
         return "\n".join(
             [
-                self._thumbnail_start_marker,
                 header,
                 payload,
                 footer,
-                self._thumbnail_end_marker,
                 "",
             ]
         )

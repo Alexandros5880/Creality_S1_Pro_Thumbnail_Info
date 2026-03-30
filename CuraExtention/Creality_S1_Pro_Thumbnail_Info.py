@@ -33,7 +33,7 @@ class Creality_S1_Pro_Thumbnail_Info(Script):
                     "label": "Thumbnail size",
                     "description": "Thumbnail width/height in pixels (square).",
                     "type": "int",
-                    "default_value": 64,
+                    "default_value": 300,
                     "minimum_value": 32,
                     "maximum_value": 128
                 },
@@ -151,9 +151,9 @@ class Creality_S1_Pro_Thumbnail_Info(Script):
             jpg_bytes = bytes(ba)
             byte_count = len(jpg_bytes)
             
-            if byte_count > 20000:
-                Logger.log("w", f"S1Pro thumbnail: Thumbnail too large ({byte_count} bytes), skipping.")
-                return [gcode]
+            # if byte_count > 20000:
+            #     Logger.log("w", f"S1Pro thumbnail: Thumbnail too large ({byte_count} bytes), skipping.")
+            #     return [gcode]
 
             import base64, textwrap
             b64 = base64.b64encode(jpg_bytes).decode("ascii")
