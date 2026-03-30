@@ -1,59 +1,109 @@
-# Creality Ender-3 S1 Pro — Cura Thumbnail + Info (300×300)
+# Creality S1 Pro -- Thumbnail & Auto Tools for Ultimaker Cura
 
-A Cura Post-Processing script that embeds a **Creality-compatible JPEG thumbnail block**
-and keeps **print info** visible on the Ender-3 S1 Pro screen (time / filament / layers).
+Enhance **Ultimaker Cura** with automatic Creality-compatible thumbnails
+and optional printer commands for the **Creality Ender 3 S1 Pro**.
 
-✅ Tested with **Cura 5.11** and **Ender-3 S1 Pro**.
+This repository contains:
 
----
+-   Cura Extension (UI Plugin)
+-   Cura Post-Processing Script (G-code modification)
 
-## Features
-- 300×300 JPEG thumbnail (Creality JPG block)
-- Works from SD card (no extra tools)
-- Keeps common “info” lines compatible with Creality UI
+------------------------------------------------------------------------
 
----
+# PART 1 -- Install the Cura Extension (UI Plugin)
 
-## Installation (Windows / Cura 5.x)
+This makes the plugin appear in:
 
-1) Copy the script file into Cura scripts folder:
+Extensions → Creality S1 Pro Auto Thumbnail
 
-`%APPDATA%\cura\5.xx\scripts\`
+Step 1 -- Locate Cura plugins folder (Windows):
 
-Example for Cura 5.11:
-`%APPDATA%\cura\5.11\scripts\`
+C:`\Users`\<YOUR_USERNAME\>`\AppData\Roaming\cura`\<CURA_VERSION\>`\plugins`\
 
-2) Restart Cura
+Example:
 
-3) In Cura:
-**Extensions → Post Processing → Modify G-Code → Add a script**
-Select:
-**S1 Pro: 300x300 Thumbnail (Creality JPG block)**
+C:`\Users\Alex\AppData\Roaming\cura`\\5.6`\plugins`\
 
----
+Step 2 -- Copy this folder:
 
-## Recommended settings
-- Thumbnail size: **300**
-- JPEG quality: **85**
-- Line prefix: `;`
-- Base64 line length: **76**
-- “Creality tail numbers”: `1 197 500`
+CuraPlugin/CrealityS1ProAutoThumbnail
 
----
+Into:
 
-## Troubleshooting
-- If the printer shows no preview, try renaming the gcode file (printer can cache previews).
-- If Cura crashes on startup, remove the script from the `scripts` folder and restart Cura.
+.../cura/`<version>`/plugins/
 
----
+Final structure must be:
 
-## Contributing
-PRs are welcome. If you can test on other S1 firmware versions, open an issue with:
-- Firmware version
-- Cura version
-- A sample gcode (small)
+plugins/CrealityS1ProAutoThumbnail
 
----
+IMPORTANT: Do NOT create nested folders like:
+plugins/CrealityS1ProAutoThumbnail/CrealityS1ProAutoThumbnail/
 
-## License
-MIT
+Step 3 -- Restart Cura completely.
+
+------------------------------------------------------------------------
+
+# PART 2 -- Install the Post-Processing Script
+
+This enables the thumbnail injection in G-code.
+
+It will appear in:
+
+Extensions → Post Processing → Modify G-code
+
+Step 1 -- Locate scripts folder (Windows):
+
+C:`\Users`\<YOUR_USERNAME\>`\AppData\Roaming\cura`\<CURA_VERSION\>`\scripts`\
+
+If the folder does not exist, create it.
+
+Step 2 -- Copy:
+
+CuraExtention/Creality_S1_Pro_Thumbnail_Info.py
+
+Into:
+
+.../cura/`<version>`/scripts/
+
+Step 3 -- Restart Cura.
+
+Then:
+
+1.  Slice a model
+2.  Go to Extensions → Post Processing → Modify G-code
+3.  Click Add Script
+4.  Select: S1 Pro: 300x300 Thumbnail (Creality JPG block)
+
+------------------------------------------------------------------------
+
+# What This Tool Does
+
+-   Injects Creality-compatible JPG thumbnail block
+-   Supports configurable thumbnail size
+-   Optional Auto Bed Level command
+-   Optional custom printer start commands
+-   Compatible with Cura 5.x
+
+------------------------------------------------------------------------
+
+# Troubleshooting
+
+If plugin does not appear:
+
+-   Check folder nesting
+-   Ensure plugin.json exists
+-   Restart Cura
+-   Check log file:
+
+C:`\Users`\<USER\>`\AppData\Roaming\cura`\<version\>`\cura`.log
+
+If script does not appear:
+
+-   Ensure .py file is inside /scripts/
+-   Restart Cura
+
+------------------------------------------------------------------------
+
+# License
+
+MIT License
